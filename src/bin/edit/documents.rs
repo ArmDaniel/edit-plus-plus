@@ -9,6 +9,8 @@ use std::path::{Path, PathBuf};
 use edit::buffer::{RcTextBuffer, TextBuffer};
 use edit::helpers::{CoordType, Point};
 use edit::{apperr, path, sys, syntax};
+use std::ops::Range;
+use tree_sitter_highlight::Highlight;
 use tree_sitter::Tree;
 
 use crate::state::DisplayablePathBuf;
@@ -23,6 +25,7 @@ pub struct Document {
     pub syntax_tree: Option<Tree>,
     pub language: Option<syntax::SupportedLanguage>,
     pub buffer_generation: u32,
+    pub highlights: Vec<(Range<usize>, Highlight)>,
 }
 
 impl Document {
@@ -134,6 +137,7 @@ impl DocumentManager {
             syntax_tree: None,
             language: None,
             buffer_generation: 0,
+            highlights: Vec::new(),
         };
         self.gen_untitled_name(&mut doc);
 
@@ -197,6 +201,7 @@ impl DocumentManager {
             syntax_tree: None,
             language: None,
             buffer_generation: 0,
+            highlights: Vec::new(),
         };
         doc.set_path(path);
 

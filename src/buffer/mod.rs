@@ -44,6 +44,7 @@ use crate::framebuffer::{Framebuffer, IndexedColor};
 use crate::helpers::*;
 use crate::oklab::oklab_blend;
 use crate::simd::memchr2;
+use tree_sitter_highlight::Highlight;
 use crate::unicode::{self, Cursor, MeasurementConfig, Utf8Chars};
 use crate::{apperr, icu, simd};
 
@@ -229,6 +230,8 @@ pub struct TextBuffer {
     selection: Option<TextBufferSelection>,
     selection_generation: u32,
     search: Option<UnsafeCell<ActiveSearch>>,
+    highlights: Vec<(Range<usize>, Highlight)>,
+    highlight_generation: u32,
 
     width: CoordType,
     margin_width: CoordType,
@@ -277,6 +280,8 @@ impl TextBuffer {
             selection: None,
             selection_generation: 0,
             search: None,
+            highlights: Vec::new(),
+            highlight_generation: 0,
 
             width: 0,
             margin_width: 0,
@@ -1846,6 +1851,40 @@ impl TextBuffer {
                 fb.blend_fg(rect, fg);
             }
 
+            if self.highlight_generation == self.buffer.generation() {
+                for (range, highlight) in &self.highlights {
+                    if range.start >= cursor_end.offset || range.end <= cursor_beg.offset {
+                        continue;
+                    }
+
+                    let mut cursor = cursor_beg;
+                    let mut h_beg = cursor_beg.visual_pos;
+                    let mut h_end = cursor_end.visual_pos;
+
+                    if range.start > cursor_beg.offset {
+                        cursor = self.cursor_move_to_offset_internal(cursor, range.start);
+                        h_beg = cursor.visual_pos;
+                    }
+
+                    if range.end < cursor_end.offset {
+                        cursor = self.cursor_move_to_offset_internal(cursor, range.end);
+                        h_end = cursor.visual_pos;
+                    }
+
+                    let left = destination.left + self.margin_width - origin.x;
+                    let top = destination.top + y;
+                    let rect = Rect {
+                        left: left + h_beg.x.max(origin.x),
+                        top,
+                        right: left + h_end.x.min(origin.x + text_width),
+                        bottom: top + 1,
+                    };
+
+                    let fg = highlight_to_color(highlight.0, fb);
+                    fb.blend_fg(rect, fg);
+                }
+            }
+
             // Nothing to do if the entire line is empty.
             if cursor_beg.offset != cursor_end.offset {
                 // If we couldn't reach the left edge, we may have stopped short due to a wide glyph.
@@ -2843,6 +2882,11 @@ impl TextBuffer {
     pub fn read_forward(&self, off: usize) -> &[u8] {
         self.buffer.read_forward(off)
     }
+
+    pub fn set_highlights(&mut self, highlights: Vec<(Range<usize>, Highlight)>) {
+        self.highlights = highlights;
+        self.highlight_generation = self.buffer.generation();
+    }
 }
 
 pub enum Bom {
@@ -2881,4 +2925,17 @@ fn detect_bom(bytes: &[u8]) -> Option<&'static str> {
         }
     }
     None
+}
+
+fn highlight_to_color(highlight: usize, fb: &Framebuffer) -> u32 {
+    match highlight {
+        0 => fb.indexed(IndexedColor::White),      // Default
+        1 => fb.indexed(IndexedColor::BrightBlue), // Keyword
+        2 => fb.indexed(IndexedColor::Green),      // String
+        3 => fb.indexed(IndexedColor::Yellow),     // Type
+        4 => fb.indexed(IndexedColor::Cyan),       // Function
+        5 => fb.indexed(IndexedColor::Red),        // Constant
+        6 => fb.indexed(IndexedColor::Magenta),    // Comment
+        _ => fb.indexed(IndexedColor::White),
+    }
 }
