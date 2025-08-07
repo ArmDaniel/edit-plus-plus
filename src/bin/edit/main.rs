@@ -6,6 +6,7 @@
 mod documents;
 mod draw_editor;
 mod draw_filepicker;
+mod draw_filetree;
 mod draw_menubar;
 mod draw_statusbar;
 mod localization;
@@ -20,11 +21,12 @@ use std::{env, process};
 
 use draw_editor::*;
 use draw_filepicker::*;
+use draw_filetree::*;
 use draw_menubar::*;
 use draw_statusbar::*;
 use edit::arena::{self, Arena, ArenaString, scratch_arena};
 use edit::framebuffer::{self, IndexedColor};
-use edit::helpers::{CoordType, KIBI, MEBI, MetricFormatter, Rect, Size};
+use edit::helpers::{CoordType, KIBI, MEBI, MetricFormatter, Rect, Size, COORD_TYPE_SAFE_MAX};
 use edit::input::{self, kbmod, vk};
 use edit::oklab::oklab_blend;
 use edit::tui::*;
@@ -263,7 +265,8 @@ fn handle_args(state: &mut State) -> apperr::Result<bool> {
         state.documents.add_untitled()?;
     }
 
-    state.file_picker_pending_dir = DisplayablePathBuf::from_path(cwd);
+    state.file_picker_pending_dir = DisplayablePathBuf::from_path(cwd.clone());
+    state.file_tree.nodes = build_file_tree(&cwd);
     Ok(false)
 }
 
@@ -285,7 +288,18 @@ fn print_version() {
 
 fn draw(ctx: &mut Context, state: &mut State) {
     draw_menubar(ctx, state);
+
+    ctx.table_begin("main_layout");
+    ctx.table_set_columns(&[COORD_TYPE_SAFE_MAX, 30]);
+    ctx.table_next_row();
+
     draw_editor(ctx, state);
+
+    if state.file_tree.visible {
+        draw_file_tree(ctx, state);
+    }
+    ctx.table_end();
+
     draw_statusbar(ctx, state);
 
     if state.wants_close {
@@ -322,7 +336,9 @@ fn draw(ctx: &mut Context, state: &mut State) {
     if let Some(key) = ctx.keyboard_input() {
         // Shortcuts that are not handled as part of the textarea, etc.
 
-        if key == kbmod::CTRL | vk::N {
+        if key == kbmod::CTRL | vk::E {
+            state.file_tree.visible = !state.file_tree.visible;
+        } else if key == kbmod::CTRL | vk::N {
             draw_add_untitled_document(ctx, state);
         } else if key == kbmod::CTRL | vk::O {
             state.wants_file_picker = StateFilePicker::Open;

@@ -26,14 +26,76 @@ pub fn draw_editor(ctx: &mut Context, state: &mut State) {
     };
 
     if let Some(doc) = state.documents.active() {
-        ctx.textarea("textarea", doc.buffer.clone());
-        ctx.inherit_focus();
+        if doc.language.is_some() {
+            draw_highlighted_editor(ctx, state);
+        } else {
+            ctx.textarea("textarea", doc.buffer.clone());
+            ctx.inherit_focus();
+        }
     } else {
         ctx.block_begin("empty");
         ctx.block_end();
     }
 
     ctx.attr_intrinsic_size(Size { width: 0, height: size.height - height_reduction });
+}
+
+fn draw_highlighted_editor(ctx: &mut Context, state: &mut State) {
+    let doc = state.documents.active_mut().unwrap();
+    let lang = doc.language.unwrap();
+    let mut code = String::new();
+    doc.buffer.borrow_mut().save_as_string(&mut code);
+
+    // Parse the document if it hasn't been parsed yet.
+    if doc.syntax_tree.is_none() {
+        doc.syntax_tree = state.syntax.parse(&code, lang);
+    }
+
+    let highlights: Vec<_> = state.syntax.highlight(&code, lang).collect();
+
+    ctx.block_begin("editor");
+    ctx.attr_background_rgba(ctx.indexed(IndexedColor::Black));
+    ctx.attr_foreground_rgba(ctx.indexed(IndexedColor::White));
+    ctx.inherit_focus();
+
+    let mut line_start = 0;
+    for (i, line) in code.lines().enumerate() {
+        let line_end = line_start + line.len() + 1;
+        ctx.next_block_id_mixin(i as u64);
+        ctx.block_begin("line");
+        for (range, highlight) in &highlights {
+            if range.start >= line_end || range.end <= line_start {
+                continue;
+            }
+
+            let start = range.start.max(line_start);
+            let end = range.end.min(line_end - 1);
+            if start >= end {
+                continue;
+            }
+            let text = &code[start..end];
+            ctx.next_block_id_mixin(range.start as u64);
+            ctx.label("token", text);
+            ctx.attr_foreground_rgba(highlight_to_color(highlight.0, ctx));
+        }
+        ctx.block_end();
+        line_start = line_end;
+    }
+
+    ctx.block_end();
+}
+
+fn highlight_to_color(highlight: usize, ctx: &Context) -> u32 {
+    match highlight {
+        0 => ctx.indexed(IndexedColor::White),      // Default
+        1 => ctx.indexed(IndexedColor::BrightBlue), // Keyword
+        2 => ctx.indexed(IndexedColor::Green),      // String
+        3 => ctx.indexed(IndexedColor::Yellow),     // Type
+        4 => ctx.indexed(IndexedColor::Cyan),       // Function
+        5 => ctx.indexed(IndexedColor::Red),       // Constant
+        6 => ctx.indexed(IndexedColor::Magenta),    // Comment
+        _ => ctx.indexed(IndexedColor::White),
+    }
 }
 
 fn draw_search(ctx: &mut Context, state: &mut State) {

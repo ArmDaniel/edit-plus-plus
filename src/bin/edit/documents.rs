@@ -8,7 +8,8 @@ use std::path::{Path, PathBuf};
 
 use edit::buffer::{RcTextBuffer, TextBuffer};
 use edit::helpers::{CoordType, Point};
-use edit::{apperr, path, sys};
+use edit::{apperr, path, sys, syntax};
+use tree_sitter::Tree;
 
 use crate::state::DisplayablePathBuf;
 
@@ -19,6 +20,8 @@ pub struct Document {
     pub filename: String,
     pub file_id: Option<sys::FileId>,
     pub new_file_counter: usize,
+    pub syntax_tree: Option<Tree>,
+    pub language: Option<syntax::SupportedLanguage>,
 }
 
 impl Document {
@@ -63,6 +66,12 @@ impl Document {
         let dir = path.parent().map(ToOwned::to_owned).unwrap_or_default();
         self.filename = filename;
         self.dir = Some(DisplayablePathBuf::from_path(dir));
+        self.language = match path.extension().and_then(OsStr::to_str) {
+            Some("rs") => Some(syntax::SupportedLanguage::Rust),
+            Some("cpp") | Some("hpp") | Some("h") => Some(syntax::SupportedLanguage::Cpp),
+            Some("py") => Some(syntax::SupportedLanguage::Python),
+            _ => None,
+        };
         self.path = Some(path);
         self.update_file_mode();
     }
@@ -121,6 +130,8 @@ impl DocumentManager {
             filename: Default::default(),
             file_id: None,
             new_file_counter: 0,
+            syntax_tree: None,
+            language: None,
         };
         self.gen_untitled_name(&mut doc);
 
@@ -181,6 +192,8 @@ impl DocumentManager {
             filename: Default::default(),
             file_id,
             new_file_counter: 0,
+            syntax_tree: None,
+            language: None,
         };
         doc.set_path(path);
 
