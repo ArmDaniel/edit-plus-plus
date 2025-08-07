@@ -34,6 +34,11 @@ codegen-units = 16          # Make compiling criterion faster (16 is the default
 lto = "thin"                # Similarly, speed up linking by a ton
 
 [dependencies]
+tree-sitter = "0.22.6"
+tree-sitter-highlight = "0.22.2"
+tree-sitter-rust = "0.21.0"
+tree-sitter-cpp = "0.21.0"
+tree-sitter-python = "0.21.0"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

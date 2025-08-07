@@ -8,10 +8,12 @@ use std::path::{Path, PathBuf};
 
 use edit::framebuffer::IndexedColor;
 use edit::helpers::*;
+use edit::syntax;
 use edit::tui::*;
 use edit::{apperr, buffer, icu, sys};
 
 use crate::documents::DocumentManager;
+use crate::draw_filetree::FileTreeNode;
 use crate::localization::*;
 
 #[repr(transparent)]
@@ -126,11 +128,29 @@ pub struct OscTitleFileStatus {
     pub dirty: bool,
 }
 
+pub struct FileTree {
+    pub visible: bool,
+    pub nodes: Vec<FileTreeNode>,
+    pub selected_node: Option<usize>,
+}
+
+impl Default for FileTree {
+    fn default() -> Self {
+        Self {
+            visible: false,
+            nodes: vec![],
+            selected_node: None,
+        }
+    }
+}
+
 pub struct State {
     pub menubar_color_bg: u32,
     pub menubar_color_fg: u32,
 
     pub documents: DocumentManager,
+    pub syntax: syntax::Syntax,
+    pub file_tree: FileTree,
 
     // A ring buffer of the last 10 errors.
     pub error_log: [String; 10],
@@ -180,6 +200,8 @@ impl State {
             menubar_color_fg: 0,
 
             documents: Default::default(),
+            syntax: syntax::Syntax::new(),
+            file_tree: Default::default(),
 
             error_log: [const { String::new() }; 10],
             error_log_index: 0,

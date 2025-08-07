@@ -19,9 +19,15 @@ You can install the latest version with WinGet:
 winget install Microsoft.Edit
 ```
 
+## Features
+
+*   **Syntax Highlighting**: Code is highlighted for Rust, C++, and Python files.
+*   **File Tree View**: A file tree view is available on the right side of the editor. It can be toggled using `Ctrl+E`.
+
 ## Build Instructions
 
 * [Install Rust](https://www.rust-lang.org/tools/install)
+* A C/C++ compiler (e.g., GCC, Clang, or MSVC).
 * Install the nightly toolchain: `rustup install nightly`
   * Alternatively, set the environment variable `RUSTC_BOOTSTRAP=1`
 * Clone the repository
