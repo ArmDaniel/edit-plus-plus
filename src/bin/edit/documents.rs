@@ -22,6 +22,7 @@ pub struct Document {
     pub new_file_counter: usize,
     pub syntax_tree: Option<Tree>,
     pub language: Option<syntax::SupportedLanguage>,
+    pub buffer_generation: u32,
 }
 
 impl Document {
@@ -132,6 +133,7 @@ impl DocumentManager {
             new_file_counter: 0,
             syntax_tree: None,
             language: None,
+            buffer_generation: 0,
         };
         self.gen_untitled_name(&mut doc);
 
@@ -194,6 +196,7 @@ impl DocumentManager {
             new_file_counter: 0,
             syntax_tree: None,
             language: None,
+            buffer_generation: 0,
         };
         doc.set_path(path);
 

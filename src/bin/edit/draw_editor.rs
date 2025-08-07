@@ -46,9 +46,10 @@ fn draw_highlighted_editor(ctx: &mut Context, state: &mut State) {
     let mut code = String::new();
     doc.buffer.borrow_mut().save_as_string(&mut code);
 
-    // Parse the document if it hasn't been parsed yet.
-    if doc.syntax_tree.is_none() {
+    let current_generation = doc.buffer.borrow().generation();
+    if doc.syntax_tree.is_none() || doc.buffer_generation != current_generation {
         doc.syntax_tree = state.syntax.parse(&code, lang);
+        doc.buffer_generation = current_generation;
     }
 
     let highlights: Vec<_> = state.syntax.highlight(&code, lang).collect();

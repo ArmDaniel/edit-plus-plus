@@ -70,6 +70,7 @@ pub fn draw_file_tree(ctx: &mut Context, state: &mut State) {
     }
 
     ctx.list_end();
+
     ctx.block_end();
 }
 
