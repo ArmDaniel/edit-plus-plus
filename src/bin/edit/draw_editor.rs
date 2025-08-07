@@ -45,6 +45,7 @@ fn draw_highlighted_editor(ctx: &mut Context, state: &mut State) {
     let lang = doc.language.unwrap();
     let mut code = String::new();
     doc.buffer.borrow_mut().save_as_string(&mut code);
+    let code = code.replace("\r\n", "\n");
 
     let current_generation = doc.buffer.borrow().generation();
     if doc.syntax_tree.is_none() || doc.buffer_generation != current_generation {

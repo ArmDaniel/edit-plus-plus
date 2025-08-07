@@ -32,36 +32,30 @@ impl SupportedLanguage {
 
     fn to_highlight_config(self) -> HighlightConfiguration {
         let mut config = match self {
-            SupportedLanguage::Rust => {
-                HighlightConfiguration::new(
-                    tree_sitter_rust::language(),
-                    tree_sitter_rust::HIGHLIGHTS_QUERY,
-                    "",
-                    "",
-                    "",
-                )
-                .unwrap()
-            }
-            SupportedLanguage::Cpp => {
-                HighlightConfiguration::new(
-                    tree_sitter_cpp::language(),
-                    tree_sitter_cpp::HIGHLIGHT_QUERY,
-                    "",
-                    "",
-                    "",
-                )
-                .unwrap()
-            }
-            SupportedLanguage::Python => {
-                HighlightConfiguration::new(
-                    tree_sitter_python::language(),
-                    tree_sitter_python::HIGHLIGHTS_QUERY,
-                    "",
-                    "",
-                    "",
-                )
-                .unwrap()
-            }
+            SupportedLanguage::Rust => HighlightConfiguration::new(
+                tree_sitter_rust::language(),
+                "rust",
+                tree_sitter_rust::HIGHLIGHTS_QUERY,
+                "",
+                "",
+            )
+            .unwrap(),
+            SupportedLanguage::Cpp => HighlightConfiguration::new(
+                tree_sitter_cpp::language(),
+                "cpp",
+                tree_sitter_cpp::HIGHLIGHT_QUERY,
+                "",
+                "",
+            )
+            .unwrap(),
+            SupportedLanguage::Python => HighlightConfiguration::new(
+                tree_sitter_python::language(),
+                "python",
+                tree_sitter_python::HIGHLIGHTS_QUERY,
+                "",
+                "",
+            )
+            .unwrap(),
         };
 
         let highlight_names = [
