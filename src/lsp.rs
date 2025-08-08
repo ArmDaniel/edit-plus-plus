@@ -226,7 +226,9 @@ impl LspClient {
         match message {
             ServerMessage::Response { id, result } => {
                 if let Some(tx) = self.pending_requests.remove(&id) {
-                    tx.send(result).await?;
+                    if tx.try_send(result).is_err() {
+                        warn!("Failed to send response to pending request {}", id);
+                    }
                 } else {
                     warn!("Received response for unknown request id: {}", id);
                 }

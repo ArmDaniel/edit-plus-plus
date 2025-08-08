@@ -71,7 +71,7 @@ async fn run() -> apperr::Result<()> {
     // Init the `loc` module, so that error messages are localized.
     localization::init();
 
-    simple_logging::log_to_file("edit.log", log::LevelFilter::Info).unwrap();
+    simple_logging::log_to_file("edit.log", log::LevelFilter::Debug).unwrap();
 
     let (tx, rx) = mpsc::channel(32);
     let (response_tx, mut response_rx) = mpsc::channel(32);
