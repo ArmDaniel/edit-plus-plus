@@ -34,11 +34,16 @@ codegen-units = 16          # Make compiling criterion faster (16 is the default
 lto = "thin"                # Similarly, speed up linking by a ton
 
 [dependencies]
+anyhow = "1.0"
 tree-sitter = "0.22.6"
 tree-sitter-highlight = "0.22.2"
 tree-sitter-rust = "0.21.0"
 tree-sitter-cpp = "0.21.0"
 tree-sitter-python = "0.21.0"
+lsp-types = "0.95.1"
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
@@ -67,6 +72,4 @@ features = [
 
 [dev-dependencies]
 criterion = { version = "0.7", features = ["html_reports"] }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = { version = "1.0" }
 zstd = { version = "0.13", default-features = false }

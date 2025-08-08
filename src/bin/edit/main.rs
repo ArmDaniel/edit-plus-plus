@@ -29,8 +29,10 @@ use edit::framebuffer::{self, IndexedColor};
 use edit::helpers::{CoordType, KIBI, MEBI, MetricFormatter, Rect, Size, COORD_TYPE_SAFE_MAX};
 use edit::input::{self, kbmod, vk};
 use edit::oklab::oklab_blend;
-use edit::tui::*;
+use edit::lsp::{LspClient, LspMessage, LspResponse};
+use edit::tui::{ButtonStyle, Context, ModifierTranslations, Position as TuiPosition, Tui};
 use edit::vt::{self, Token};
+use tokio::sync::mpsc;
 use edit::{apperr, arena_format, base64, path, sys, unicode};
 use localization::*;
 use state::*;
@@ -40,7 +42,8 @@ const SCRATCH_ARENA_CAPACITY: usize = 128 * MEBI;
 #[cfg(target_pointer_width = "64")]
 const SCRATCH_ARENA_CAPACITY: usize = 512 * MEBI;
 
-fn main() -> process::ExitCode {
+#[tokio::main]
+async fn main() -> process::ExitCode {
     if cfg!(debug_assertions) {
         let hook = std::panic::take_hook();
         std::panic::set_hook(Box::new(move |info| {
@@ -50,7 +53,7 @@ fn main() -> process::ExitCode {
         }));
     }
 
-    match run() {
+    match run().await {
         Ok(()) => process::ExitCode::SUCCESS,
         Err(err) => {
             sys::write_stdout(&format!("{}\n", FormatApperr::from(err)));
@@ -59,13 +62,43 @@ fn main() -> process::ExitCode {
     }
 }
 
-fn run() -> apperr::Result<()> {
+async fn run() -> apperr::Result<()> {
     // Init `sys` first, as everything else may depend on its functionality (IO, function pointers, etc.).
     let _sys_deinit = sys::init();
     // Next init `arena`, so that `scratch_arena` works. `loc` depends on it.
     arena::init(SCRATCH_ARENA_CAPACITY)?;
     // Init the `loc` module, so that error messages are localized.
     localization::init();
+
+    let (tx, mut rx) = mpsc::channel(32);
+    let (response_tx, mut response_rx) = mpsc::channel(32);
+
+    let _lsp_thread = tokio::spawn(async move {
+        let mut lsp_client = LspClient::new().await.ok();
+        if let Some(client) = &mut lsp_client {
+            client.initialize().await.unwrap();
+        }
+
+        while let Some(msg) = rx.recv().await {
+            if let Some(client) = &mut lsp_client {
+                match msg {
+                    LspMessage::DidChange(uri, text, version) => {
+                        client.did_change(uri, &text, version).await.unwrap();
+                    }
+                    LspMessage::Completion(uri, position) => {
+                        if let Ok(Some(completions)) = client.completion(uri, position).await {
+                            if let Ok(completions) = serde_json::from_value(completions) {
+                                response_tx
+                                    .send(LspResponse::Completion(completions))
+                                    .await
+                                    .unwrap();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    });
 
     let mut state = State::new()?;
     if handle_args(&mut state)? {
@@ -111,6 +144,14 @@ fn run() -> apperr::Result<()> {
     let mut last_latency_width = 0;
 
     loop {
+        if let Ok(response) = response_rx.try_recv() {
+            match response {
+                LspResponse::Completion(items) => {
+                    state.completion_items = Some(items);
+                }
+            }
+        }
+
         #[cfg(feature = "debug-latency")]
         let time_beg;
         #[cfg(feature = "debug-latency")]
@@ -138,7 +179,7 @@ fn run() -> apperr::Result<()> {
                 let more = input.is_some();
                 let mut ctx = tui.create_context(input);
 
-                draw(&mut ctx, &mut state);
+                draw(&mut ctx, &mut state, &tx).await;
 
                 #[cfg(feature = "debug-latency")]
                 {
@@ -154,7 +195,7 @@ fn run() -> apperr::Result<()> {
         while tui.needs_settling() {
             let mut ctx = tui.create_context(None);
 
-            draw(&mut ctx, &mut state);
+            draw(&mut ctx, &mut state, &tx).await;
 
             #[cfg(feature = "debug-latency")]
             {
@@ -286,14 +327,14 @@ fn print_version() {
     sys::write_stdout(concat!("edit version ", env!("CARGO_PKG_VERSION"), "\n"));
 }
 
-fn draw(ctx: &mut Context, state: &mut State) {
+async fn draw(ctx: &mut Context<'_, '_>, state: &mut State, tx: &mpsc::Sender<LspMessage>) {
     draw_menubar(ctx, state);
 
     ctx.table_begin("main_layout");
     ctx.table_set_columns(&[COORD_TYPE_SAFE_MAX, 30]);
     ctx.table_next_row();
 
-    draw_editor(ctx, state);
+    draw_editor(ctx, state, tx).await;
 
     if state.file_tree.visible {
         draw_file_tree(ctx, state);
@@ -372,6 +413,34 @@ fn draw(ctx: &mut Context, state: &mut State) {
         ctx.needs_rerender();
         ctx.set_input_consumed();
     }
+
+    if let Some(items) = &state.completion_items {
+        if let Some(key) = ctx.keyboard_input() {
+            if key == vk::UP {
+                state.selected_completion_item =
+                    (state.selected_completion_item + items.len() - 1) % items.len();
+                ctx.needs_rerender();
+                ctx.set_input_consumed();
+            } else if key == vk::DOWN {
+                state.selected_completion_item = (state.selected_completion_item + 1) % items.len();
+                ctx.needs_rerender();
+                ctx.set_input_consumed();
+            } else if key == vk::TAB || key == vk::RETURN {
+                let item = &items[state.selected_completion_item];
+                let text = item.insert_text.as_deref().unwrap_or(&item.label);
+                if let Some(doc) = state.documents.active_mut() {
+                    doc.buffer.borrow_mut().write_canon(text.as_bytes());
+                }
+                state.completion_items = None;
+                ctx.needs_rerender();
+                ctx.set_input_consumed();
+            } else if key == vk::ESCAPE {
+                state.completion_items = None;
+                ctx.needs_rerender();
+                ctx.set_input_consumed();
+            }
+        }
+    }
 }
 
 fn draw_handle_wants_exit(_ctx: &mut Context, state: &mut State) {
@@ -435,9 +504,9 @@ fn draw_handle_clipboard_change(ctx: &mut Context, state: &mut State) {
 
         if over_limit {
             ctx.label("line1", loc(LocId::LargeClipboardWarningLine1));
-            ctx.attr_position(Position::Center);
+            ctx.attr_position(TuiPosition::Center);
             ctx.label("line2", loc(LocId::SuperLargeClipboardWarning));
-            ctx.attr_position(Position::Center);
+            ctx.attr_position(TuiPosition::Center);
         } else {
             let label2 = {
                 let template = loc(LocId::LargeClipboardWarningLine2);
@@ -451,18 +520,18 @@ fn draw_handle_clipboard_change(ctx: &mut Context, state: &mut State) {
             };
 
             ctx.label("line1", loc(LocId::LargeClipboardWarningLine1));
-            ctx.attr_position(Position::Center);
+            ctx.attr_position(TuiPosition::Center);
             ctx.label("line2", &label2);
-            ctx.attr_position(Position::Center);
+            ctx.attr_position(TuiPosition::Center);
             ctx.label("line3", loc(LocId::LargeClipboardWarningLine3));
-            ctx.attr_position(Position::Center);
+            ctx.attr_position(TuiPosition::Center);
         }
         ctx.block_end();
 
         ctx.table_begin("choices");
         ctx.inherit_focus();
         ctx.attr_padding(Rect::three(0, 2, 1));
-        ctx.attr_position(Position::Center);
+        ctx.attr_position(TuiPosition::Center);
         ctx.table_set_cell_gap(Size { width: 2, height: 0 });
         {
             ctx.table_next_row();

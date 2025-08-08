@@ -7,12 +7,19 @@ use edit::framebuffer::IndexedColor;
 use edit::helpers::*;
 use edit::icu;
 use edit::input::{kbmod, vk};
-use edit::tui::*;
+use edit::lsp::LspMessage;
+use edit::tui::{ButtonStyle, Context, FloatSpec, Anchor, Position as TuiPosition};
+use lsp_types::{Position, Url};
+use tokio::sync::mpsc;
 
 use crate::localization::*;
 use crate::state::*;
 
-pub fn draw_editor(ctx: &mut Context, state: &mut State) {
+pub async fn draw_editor(
+    ctx: &mut Context<'_, '_>,
+    state: &mut State,
+    tx: &mpsc::Sender<LspMessage>,
+) {
     if !matches!(state.wants_search.kind, StateSearchKind::Hidden | StateSearchKind::Disabled) {
         draw_search(ctx, state);
     }
@@ -27,10 +34,13 @@ pub fn draw_editor(ctx: &mut Context, state: &mut State) {
 
     if let Some(doc) = state.documents.active() {
         if doc.language.is_some() {
-            draw_highlighted_editor(ctx, state);
+            draw_highlighted_editor(ctx, state, tx).await;
         } else {
             ctx.textarea("textarea", doc.buffer.clone());
             ctx.inherit_focus();
+        }
+        if state.completion_items.is_some() {
+            draw_suggestions_popup(ctx, state);
         }
     } else {
         ctx.block_begin("empty");
@@ -40,25 +50,71 @@ pub fn draw_editor(ctx: &mut Context, state: &mut State) {
     ctx.attr_intrinsic_size(Size { width: 0, height: size.height - height_reduction });
 }
 
-fn draw_highlighted_editor(ctx: &mut Context, state: &mut State) {
+async fn draw_highlighted_editor(
+    ctx: &mut Context<'_, '_>,
+    state: &mut State,
+    tx: &mpsc::Sender<LspMessage>,
+) {
     let doc = state.documents.active_mut().unwrap();
     let lang = doc.language.unwrap();
 
-    let current_generation = doc.buffer.borrow().generation();
-    if doc.buffer_generation != current_generation {
+    let buffer_generation = doc.buffer.borrow().generation();
+    let generation_changed = doc.buffer_generation != buffer_generation;
+
+    if generation_changed {
         let mut code = String::new();
         doc.buffer.borrow_mut().save_as_string(&mut code);
 
         doc.syntax_tree = state.syntax.parse(&code, lang);
         doc.highlights = state.syntax.highlight(&code, lang).collect();
-        doc.buffer_generation = current_generation;
+        doc.buffer_generation = buffer_generation;
     }
 
     let highlights = doc.highlights.clone();
     doc.buffer.borrow_mut().set_highlights(highlights);
 
     ctx.textarea("textarea", doc.buffer.clone());
+
+    if generation_changed {
+        if let Some(path) = &doc.path {
+            let uri = Url::from_file_path(path).unwrap();
+            let mut buffer = doc.buffer.borrow_mut();
+            let mut code = String::new();
+            buffer.save_as_string(&mut code);
+            tx.send(LspMessage::DidChange(uri.clone(), code, 1))
+                .await
+                .unwrap();
+
+            let cursor = buffer.cursor_logical_pos();
+            let position = Position::new(cursor.y as u32, cursor.x as u32);
+            tx.send(LspMessage::Completion(uri, position))
+                .await
+                .unwrap();
+        }
+    }
     ctx.inherit_focus();
+}
+
+pub fn draw_suggestions_popup(ctx: &mut Context, state: &mut State) {
+    if let Some(items) = &state.completion_items {
+        let doc = state.documents.active().unwrap();
+        let cursor_pos = doc.buffer.borrow().cursor_visual_pos();
+
+        ctx.list_begin("suggestions");
+        ctx.attr_float(FloatSpec {
+            anchor: Anchor::Last,
+            gravity_x: 0.0,
+            gravity_y: 1.0,
+            offset_x: cursor_pos.x as f32,
+            offset_y: cursor_pos.y as f32,
+        });
+
+        for (i, item) in items.iter().enumerate() {
+            ctx.list_item(i == state.selected_completion_item, &item.label);
+        }
+
+        ctx.list_end();
+    }
 }
 
 fn draw_search(ctx: &mut Context, state: &mut State) {
@@ -269,7 +325,7 @@ pub fn draw_handle_wants_close(ctx: &mut Context, state: &mut State) {
         ctx.table_begin("choices");
         ctx.inherit_focus();
         ctx.attr_padding(Rect::three(0, 2, 1));
-        ctx.attr_position(Position::Center);
+        ctx.attr_position(TuiPosition::Center);
         ctx.table_set_cell_gap(Size { width: 2, height: 0 });
         {
             ctx.table_next_row();

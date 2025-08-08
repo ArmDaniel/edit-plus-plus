@@ -38,5 +38,6 @@ pub mod simd;
 pub mod sys;
 pub mod syntax;
 pub mod tui;
+pub mod lsp;
 pub mod unicode;
 pub mod vt;

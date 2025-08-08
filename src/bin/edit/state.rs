@@ -11,6 +11,7 @@ use edit::helpers::*;
 use edit::syntax;
 use edit::tui::*;
 use edit::{apperr, buffer, icu, sys};
+use lsp_types::CompletionItem;
 
 use crate::documents::DocumentManager;
 use crate::draw_filetree::FileTreeNode;
@@ -191,6 +192,9 @@ pub struct State {
     pub osc_clipboard_sync: bool,
     pub osc_clipboard_always_send: bool,
     pub exit: bool,
+
+    pub completion_items: Option<Vec<CompletionItem>>,
+    pub selected_completion_item: usize,
 }
 
 impl State {
@@ -241,6 +245,9 @@ impl State {
             osc_clipboard_sync: false,
             osc_clipboard_always_send: false,
             exit: false,
+
+            completion_items: None,
+            selected_completion_item: 0,
         })
     }
 }
