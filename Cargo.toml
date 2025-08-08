@@ -36,6 +36,7 @@ lto = "thin"                # Similarly, speed up linking by a ton
 [dependencies]
 anyhow = "1.0"
 log = "0.4"
+simple-logging = "2.0"
 tree-sitter = "0.22.6"
 tree-sitter-highlight = "0.22.2"
 tree-sitter-rust = "0.21.0"

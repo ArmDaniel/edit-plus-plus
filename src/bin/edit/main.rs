@@ -71,39 +71,17 @@ async fn run() -> apperr::Result<()> {
     // Init the `loc` module, so that error messages are localized.
     localization::init();
 
-    let (tx, mut rx) = mpsc::channel(32);
+    simple_logging::log_to_file("edit.log", log::LevelFilter::Info).unwrap();
+
+    let (tx, rx) = mpsc::channel(32);
     let (response_tx, mut response_rx) = mpsc::channel(32);
 
     let _lsp_thread = tokio::spawn(async move {
-        let mut lsp_client = LspClient::new().await.ok();
-        if let Some(client) = &mut lsp_client {
+        if let Some(mut client) = LspClient::new().await.ok() {
             if let Err(e) = client.initialize().await {
                 error!("Failed to initialize LSP client: {}", e);
             }
-        }
-
-        while let Some(msg) = rx.recv().await {
-            if let Some(client) = &mut lsp_client {
-                match msg {
-                    LspMessage::DidChange(uri, text, version) => {
-                        if let Err(e) = client.did_change(uri, &text, version).await {
-                            error!("Failed to send didChange notification: {}", e);
-                        }
-                    }
-                    LspMessage::Completion(uri, position) => {
-                        if let Ok(Some(completions)) = client.completion(uri, position).await {
-                            if let Ok(completions) = serde_json::from_value(completions) {
-                                if let Err(e) = response_tx
-                                    .send(LspResponse::Completion(completions))
-                                    .await
-                                {
-                                    error!("Failed to send completion response: {}", e);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            client.run(rx, response_tx).await;
         }
     });
 
