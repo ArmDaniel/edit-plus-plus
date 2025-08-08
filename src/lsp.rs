@@ -16,6 +16,7 @@ use lsp_types::{
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::collections::HashMap;
+use std::path::Path;
 use tokio::{
     io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
     process::{Child, ChildStdin, ChildStdout, Command},
@@ -111,14 +112,20 @@ impl LspClient {
         self.send_message(&notification).await
     }
 
-    pub async fn initialize(&mut self) -> Result<()> {
+    pub async fn initialize(&mut self, project_root: Option<&Path>) -> Result<()> {
+        let workspace_folders = if let Some(root_path) = project_root {
+            Some(vec![WorkspaceFolder {
+                uri: Url::from_directory_path(root_path)
+                    .map_err(|_| anyhow!("Failed to create workspace folder URI"))?,
+                name: "edit".to_string(),
+            }])
+        } else {
+            None
+        };
+
         let params = InitializeParams {
             process_id: Some(std::process::id()),
-            workspace_folders: Some(vec![WorkspaceFolder {
-                uri: Url::from_directory_path(std::env::current_dir()?)
-                    .map_err(|_| anyhow!("Failed to get current directory"))?,
-                name: "edit".to_string(),
-            }]),
+            workspace_folders,
             ..Default::default()
         };
 

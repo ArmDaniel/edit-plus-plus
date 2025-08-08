@@ -11,16 +11,11 @@ use edit::lsp::LspMessage;
 use edit::tui::{ButtonStyle, Context, FloatSpec, Anchor, Position as TuiPosition};
 use log::error;
 use lsp_types::{Position, Url};
-use tokio::sync::mpsc;
 
 use crate::localization::*;
 use crate::state::*;
 
-pub async fn draw_editor(
-    ctx: &mut Context<'_, '_>,
-    state: &mut State,
-    tx: &mpsc::Sender<LspMessage>,
-) {
+pub async fn draw_editor(ctx: &mut Context<'_, '_>, state: &mut State) {
     if !matches!(state.wants_search.kind, StateSearchKind::Hidden | StateSearchKind::Disabled) {
         draw_search(ctx, state);
     }
@@ -35,7 +30,7 @@ pub async fn draw_editor(
 
     if let Some(doc) = state.documents.active() {
         if doc.language.is_some() {
-            draw_highlighted_editor(ctx, state, tx).await;
+            draw_highlighted_editor(ctx, state).await;
         } else {
             ctx.textarea("textarea", doc.buffer.clone());
             ctx.inherit_focus();
@@ -57,11 +52,7 @@ pub async fn draw_editor(
     ctx.attr_intrinsic_size(Size { width: 0, height: size.height - height_reduction });
 }
 
-async fn draw_highlighted_editor(
-    ctx: &mut Context<'_, '_>,
-    state: &mut State,
-    tx: &mpsc::Sender<LspMessage>,
-) {
+async fn draw_highlighted_editor(ctx: &mut Context<'_, '_>, state: &mut State) {
     let doc = state.documents.active_mut().unwrap();
     let lang = doc.language.unwrap();
 
@@ -83,7 +74,7 @@ async fn draw_highlighted_editor(
     ctx.textarea("textarea", doc.buffer.clone());
 
     if generation_changed {
-        if let Some(path) = &doc.path {
+        if let (Some(path), Some(tx)) = (&doc.path, &state.lsp_tx) {
             let uri = Url::from_file_path(path).unwrap();
             let (code, cursor) = {
                 let mut buffer = doc.buffer.borrow_mut();

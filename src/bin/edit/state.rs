@@ -8,10 +8,12 @@ use std::path::{Path, PathBuf};
 
 use edit::framebuffer::IndexedColor;
 use edit::helpers::*;
+use edit::lsp::{LspMessage, LspResponse};
 use edit::syntax;
 use edit::tui::*;
 use edit::{apperr, buffer, icu, sys};
 use lsp_types::CompletionItem;
+use tokio::sync::mpsc;
 
 use crate::documents::DocumentManager;
 use crate::draw_filetree::FileTreeNode;
@@ -146,6 +148,10 @@ impl Default for FileTree {
 }
 
 pub struct State {
+    pub project_root: Option<PathBuf>,
+    pub lsp_tx: Option<mpsc::Sender<LspMessage>>,
+    pub lsp_rx: Option<mpsc::Receiver<LspResponse>>,
+
     pub menubar_color_bg: u32,
     pub menubar_color_fg: u32,
 
@@ -200,6 +206,10 @@ pub struct State {
 impl State {
     pub fn new() -> apperr::Result<Self> {
         Ok(Self {
+            project_root: None,
+            lsp_tx: None,
+            lsp_rx: None,
+
             menubar_color_bg: 0,
             menubar_color_fg: 0,
 

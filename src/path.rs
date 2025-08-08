@@ -44,10 +44,26 @@ pub fn normalize(path: &Path) -> PathBuf {
     res
 }
 
+/// Searches for the project root, which is defined as the directory containing `Cargo.toml`.
+/// The search starts from the given path and goes up the directory tree.
+pub fn find_project_root(start_path: &Path) -> Option<PathBuf> {
+    let mut current_path = start_path.to_path_buf();
+    loop {
+        if current_path.join("Cargo.toml").is_file() {
+            return Some(current_path);
+        }
+        if !current_path.pop() {
+            return None;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::ffi::OsString;
     use std::path::Path;
+    use tempfile::tempdir;
+    use std::fs::File;
 
     use super::*;
 
@@ -82,5 +98,28 @@ mod tests {
         assert_eq!(norm(r"C:/a\b/c"), r"C:\a\b\c");
         assert_eq!(norm(r"C:\a\b\c\..\..\..\..\d"), r"C:\d");
         assert_eq!(norm(r"\\server\share\path"), r"\\server\share\path");
+    }
+
+    #[test]
+    fn test_find_project_root() {
+        let dir = tempdir().unwrap();
+        let project_root = dir.path();
+        let sub_dir = project_root.join("src");
+        std::fs::create_dir(&sub_dir).unwrap();
+        File::create(project_root.join("Cargo.toml")).unwrap();
+
+        assert_eq!(find_project_root(&sub_dir), Some(project_root.to_path_buf()));
+        assert_eq!(find_project_root(project_root), Some(project_root.to_path_buf()));
+    }
+
+    #[test]
+    fn test_find_project_root_not_found() {
+        let dir = tempdir().unwrap();
+        let non_project_dir = dir.path();
+        let sub_dir = non_project_dir.join("src");
+        std::fs::create_dir(&sub_dir).unwrap();
+
+        assert_eq!(find_project_root(&sub_dir), None);
+        assert_eq!(find_project_root(non_project_dir), None);
     }
 }

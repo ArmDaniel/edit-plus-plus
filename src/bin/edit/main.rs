@@ -29,7 +29,7 @@ use edit::framebuffer::{self, IndexedColor};
 use edit::helpers::{CoordType, KIBI, MEBI, MetricFormatter, Rect, Size, COORD_TYPE_SAFE_MAX};
 use edit::input::{self, kbmod, vk};
 use edit::oklab::oklab_blend;
-use edit::lsp::{LspClient, LspMessage, LspResponse};
+use edit::lsp::{LspClient, LspResponse};
 use edit::tui::{ButtonStyle, Context, ModifierTranslations, Position as TuiPosition, Tui};
 use edit::vt::{self, Token};
 use log::error;
@@ -73,18 +73,6 @@ async fn run() -> apperr::Result<()> {
 
     simple_logging::log_to_file("edit.log", log::LevelFilter::Debug).unwrap();
 
-    let (tx, rx) = mpsc::channel(32);
-    let (response_tx, mut response_rx) = mpsc::channel(32);
-
-    let _lsp_thread = tokio::spawn(async move {
-        if let Some(mut client) = LspClient::new().await.ok() {
-            if let Err(e) = client.initialize().await {
-                error!("Failed to initialize LSP client: {}", e);
-            }
-            client.run(rx, response_tx).await;
-        }
-    });
-
     let mut state = State::new()?;
     if handle_args(&mut state)? {
         return Ok(());
@@ -96,6 +84,23 @@ async fn run() -> apperr::Result<()> {
     // and reads files (may hang; should be cancelable with Ctrl+C).
     // As such, we call this after `handle_args`.
     sys::switch_modes()?;
+
+    if let Some(project_root) = &state.project_root {
+        let (tx, rx) = mpsc::channel(32);
+        let (response_tx, response_rx) = mpsc::channel(32);
+        state.lsp_tx = Some(tx);
+        state.lsp_rx = Some(response_rx);
+        let project_root = project_root.clone();
+
+        tokio::spawn(async move {
+            if let Some(mut client) = LspClient::new().await.ok() {
+                if let Err(e) = client.initialize(Some(&project_root)).await {
+                    error!("Failed to initialize LSP client: {}", e);
+                }
+                client.run(rx, response_tx).await;
+            }
+        });
+    }
 
     let mut vt_parser = vt::Parser::new();
     let mut input_parser = input::Parser::new();
@@ -129,10 +134,12 @@ async fn run() -> apperr::Result<()> {
     let mut last_latency_width = 0;
 
     loop {
-        if let Ok(response) = response_rx.try_recv() {
-            match response {
-                LspResponse::Completion(items) => {
-                    state.completion_items = Some(items);
+        if let Some(rx) = &mut state.lsp_rx {
+            if let Ok(response) = rx.try_recv() {
+                match response {
+                    LspResponse::Completion(items) => {
+                        state.completion_items = Some(items);
+                    }
                 }
             }
         }
@@ -164,7 +171,7 @@ async fn run() -> apperr::Result<()> {
                 let more = input.is_some();
                 let mut ctx = tui.create_context(input);
 
-                draw(&mut ctx, &mut state, &tx).await;
+                draw(&mut ctx, &mut state).await;
 
                 #[cfg(feature = "debug-latency")]
                 {
@@ -180,7 +187,7 @@ async fn run() -> apperr::Result<()> {
         while tui.needs_settling() {
             let mut ctx = tui.create_context(None);
 
-            draw(&mut ctx, &mut state, &tx).await;
+            draw(&mut ctx, &mut state).await;
 
             #[cfg(feature = "debug-latency")]
             {
@@ -293,6 +300,7 @@ fn handle_args(state: &mut State) -> apperr::Result<bool> {
 
     state.file_picker_pending_dir = DisplayablePathBuf::from_path(cwd.clone());
     state.file_tree.nodes = build_file_tree(&cwd);
+    state.project_root = path::find_project_root(&cwd);
     Ok(false)
 }
 
@@ -312,14 +320,14 @@ fn print_version() {
     sys::write_stdout(concat!("edit version ", env!("CARGO_PKG_VERSION"), "\n"));
 }
 
-async fn draw(ctx: &mut Context<'_, '_>, state: &mut State, tx: &mpsc::Sender<LspMessage>) {
+async fn draw(ctx: &mut Context<'_, '_>, state: &mut State) {
     draw_menubar(ctx, state);
 
     ctx.table_begin("main_layout");
     ctx.table_set_columns(&[COORD_TYPE_SAFE_MAX, 30]);
     ctx.table_next_row();
 
-    draw_editor(ctx, state, tx).await;
+    draw_editor(ctx, state).await;
 
     if state.file_tree.visible {
         draw_file_tree(ctx, state);
