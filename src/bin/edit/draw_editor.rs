@@ -40,8 +40,14 @@ pub async fn draw_editor(
             ctx.textarea("textarea", doc.buffer.clone());
             ctx.inherit_focus();
         }
-        if state.completion_items.is_some() {
-            draw_suggestions_popup(ctx, state);
+        if let Some(items) = &state.completion_items {
+            if !items.is_empty() {
+                draw_suggestions_popup(ctx, state);
+            } else {
+                // The server responded with an empty list. We should not show the popup,
+                // and we should reset completion_items to None.
+                state.completion_items = None;
+            }
         }
     } else {
         ctx.block_begin("empty");
