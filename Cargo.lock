@@ -246,6 +246,7 @@ dependencies = [
  "anyhow",
  "criterion",
  "libc",
+ "log",
  "lsp-types",
  "serde",
  "serde_json",

@@ -9,6 +9,7 @@ use edit::icu;
 use edit::input::{kbmod, vk};
 use edit::lsp::LspMessage;
 use edit::tui::{ButtonStyle, Context, FloatSpec, Anchor, Position as TuiPosition};
+use log::error;
 use lsp_types::{Position, Url};
 use tokio::sync::mpsc;
 
@@ -81,15 +82,15 @@ async fn draw_highlighted_editor(
             let mut buffer = doc.buffer.borrow_mut();
             let mut code = String::new();
             buffer.save_as_string(&mut code);
-            tx.send(LspMessage::DidChange(uri.clone(), code, 1))
-                .await
-                .unwrap();
+            if let Err(e) = tx.send(LspMessage::DidChange(uri.clone(), code, 1)).await {
+                error!("Failed to send DidChange message: {}", e);
+            }
 
             let cursor = buffer.cursor_logical_pos();
             let position = Position::new(cursor.y as u32, cursor.x as u32);
-            tx.send(LspMessage::Completion(uri, position))
-                .await
-                .unwrap();
+            if let Err(e) = tx.send(LspMessage::Completion(uri, position)).await {
+                error!("Failed to send Completion message: {}", e);
+            }
         }
     }
     ctx.inherit_focus();

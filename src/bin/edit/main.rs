@@ -32,6 +32,7 @@ use edit::oklab::oklab_blend;
 use edit::lsp::{LspClient, LspMessage, LspResponse};
 use edit::tui::{ButtonStyle, Context, ModifierTranslations, Position as TuiPosition, Tui};
 use edit::vt::{self, Token};
+use log::error;
 use tokio::sync::mpsc;
 use edit::{apperr, arena_format, base64, path, sys, unicode};
 use localization::*;
@@ -76,22 +77,28 @@ async fn run() -> apperr::Result<()> {
     let _lsp_thread = tokio::spawn(async move {
         let mut lsp_client = LspClient::new().await.ok();
         if let Some(client) = &mut lsp_client {
-            client.initialize().await.unwrap();
+            if let Err(e) = client.initialize().await {
+                error!("Failed to initialize LSP client: {}", e);
+            }
         }
 
         while let Some(msg) = rx.recv().await {
             if let Some(client) = &mut lsp_client {
                 match msg {
                     LspMessage::DidChange(uri, text, version) => {
-                        client.did_change(uri, &text, version).await.unwrap();
+                        if let Err(e) = client.did_change(uri, &text, version).await {
+                            error!("Failed to send didChange notification: {}", e);
+                        }
                     }
                     LspMessage::Completion(uri, position) => {
                         if let Ok(Some(completions)) = client.completion(uri, position).await {
                             if let Ok(completions) = serde_json::from_value(completions) {
-                                response_tx
+                                if let Err(e) = response_tx
                                     .send(LspResponse::Completion(completions))
                                     .await
-                                    .unwrap();
+                                {
+                                    error!("Failed to send completion response: {}", e);
+                                }
                             }
                         }
                     }

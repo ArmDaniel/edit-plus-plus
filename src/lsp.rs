@@ -4,6 +4,7 @@
 //! LSP client implementation.
 
 use anyhow::{anyhow, Result};
+use log::debug;
 use lsp_types::notification::{DidChangeTextDocument, DidOpenTextDocument, Notification};
 use lsp_types::request::{Completion, Request};
 use lsp_types::{
@@ -32,6 +33,7 @@ pub struct LspClient {
 
 impl LspClient {
     pub async fn new() -> Result<Self> {
+        debug!("Spawning LSP server");
         let mut server = Command::new("rust-analyzer")
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
@@ -50,6 +52,7 @@ impl LspClient {
 
     pub async fn send_message(&mut self, message: &Value) -> Result<()> {
         let message_str = serde_json::to_string(message)?;
+        debug!("Sending message: {}", message_str);
         let content_length = message_str.len();
 
         let header = format!("Content-Length: {}\r\n\r\n", content_length);
@@ -171,6 +174,7 @@ impl LspClient {
             let mut content = vec![0; content_length];
             self.stdout.read_exact(&mut content).await?;
             let message_str = String::from_utf8(content)?;
+            debug!("Received message: {}", message_str);
             let message = serde_json::from_str(&message_str)?;
             Ok(Some(message))
         } else {
