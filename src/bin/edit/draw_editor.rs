@@ -79,14 +79,18 @@ async fn draw_highlighted_editor(
     if generation_changed {
         if let Some(path) = &doc.path {
             let uri = Url::from_file_path(path).unwrap();
-            let mut buffer = doc.buffer.borrow_mut();
-            let mut code = String::new();
-            buffer.save_as_string(&mut code);
+            let (code, cursor) = {
+                let mut buffer = doc.buffer.borrow_mut();
+                let mut code = String::new();
+                buffer.save_as_string(&mut code);
+                let cursor = buffer.cursor_logical_pos();
+                (code, cursor)
+            }; // borrow released here
+
             if let Err(e) = tx.send(LspMessage::DidChange(uri.clone(), code, 1)).await {
                 error!("Failed to send DidChange message: {}", e);
             }
 
-            let cursor = buffer.cursor_logical_pos();
             let position = Position::new(cursor.y as u32, cursor.x as u32);
             if let Err(e) = tx.send(LspMessage::Completion(uri, position)).await {
                 error!("Failed to send Completion message: {}", e);
