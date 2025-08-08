@@ -367,6 +367,37 @@ async fn draw(ctx: &mut Context<'_, '_>, state: &mut State) {
         draw_error_log(ctx, state);
     }
 
+    if let Some(items) = &state.completion_items {
+        if !items.is_empty() {
+            if let Some(key) = ctx.keyboard_input() {
+                if key == vk::UP {
+                    state.selected_completion_item =
+                        (state.selected_completion_item + items.len() - 1) % items.len();
+                    ctx.needs_rerender();
+                    ctx.set_input_consumed();
+                } else if key == vk::DOWN {
+                    state.selected_completion_item =
+                        (state.selected_completion_item + 1) % items.len();
+                    ctx.needs_rerender();
+                    ctx.set_input_consumed();
+                } else if key == vk::TAB || key == vk::RETURN {
+                    let item = &items[state.selected_completion_item];
+                    let text = item.insert_text.as_deref().unwrap_or(&item.label);
+                    if let Some(doc) = state.documents.active_mut() {
+                        doc.buffer.borrow_mut().write_canon(text.as_bytes());
+                    }
+                    state.completion_items = None;
+                    ctx.needs_rerender();
+                    ctx.set_input_consumed();
+                } else if key == vk::ESCAPE {
+                    state.completion_items = None;
+                    ctx.needs_rerender();
+                    ctx.set_input_consumed();
+                }
+            }
+        }
+    }
+
     if let Some(key) = ctx.keyboard_input() {
         // Shortcuts that are not handled as part of the textarea, etc.
 
@@ -405,44 +436,6 @@ async fn draw(ctx: &mut Context<'_, '_>, state: &mut State) {
         // All of the above shortcuts happen to require a rerender.
         ctx.needs_rerender();
         ctx.set_input_consumed();
-    }
-
-    if let Some(items) = &state.completion_items {
-        if !items.is_empty() {
-            if let Some(key) = ctx.keyboard_input() {
-                if key == vk::UP {
-                    state.selected_completion_item =
-                        (state.selected_completion_item + items.len() - 1) % items.len();
-                    ctx.needs_rerender();
-                    ctx.set_input_consumed();
-                } else if key == vk::DOWN {
-                    state.selected_completion_item =
-                        (state.selected_completion_item + 1) % items.len();
-                    ctx.needs_rerender();
-                    ctx.set_input_consumed();
-                } else if key == vk::TAB || key == vk::RETURN {
-                    let item = &items[state.selected_completion_item];
-                    let text = item.insert_text.as_deref().unwrap_or(&item.label);
-                    if let Some(doc) = state.documents.active_mut() {
-                        doc.buffer.borrow_mut().write_canon(text.as_bytes());
-                    }
-                    state.completion_items = None;
-                    ctx.needs_rerender();
-                    ctx.set_input_consumed();
-                } else if key == vk::ESCAPE {
-                    state.completion_items = None;
-                    ctx.needs_rerender();
-                    ctx.set_input_consumed();
-                }
-            }
-        } else {
-            // if items is empty, any key press should probably close the popup
-            if let Some(_) = ctx.keyboard_input() {
-                state.completion_items = None;
-                ctx.needs_rerender();
-                ctx.set_input_consumed();
-            }
-        }
     }
 }
 
