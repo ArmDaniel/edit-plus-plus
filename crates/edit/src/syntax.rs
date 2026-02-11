@@ -90,7 +90,8 @@ impl SyntaxLanguage {
     }
 
     pub fn from_path(path: &Path) -> Option<Self> {
-        path.extension().and_then(|ext| ext.to_str()).and_then(Self::from_extension)
+        let extension = path.extension()?.to_str()?;
+        Self::from_extension(extension)
     }
 }
 
@@ -127,9 +128,6 @@ impl SyntaxHighlighter {
                     highlight_stack.pop();
                 }
                 Ok(HighlightEvent::Source { start, end }) => {
-                    if start >= end {
-                        continue;
-                    }
                     let Some(highlight) = highlight_stack.last() else {
                         continue;
                     };

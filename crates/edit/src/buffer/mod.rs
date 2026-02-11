@@ -2039,9 +2039,6 @@ impl TextBuffer {
                     }
 
                     let mut apply_range = |range: Range<usize>| {
-                        if range.start >= range.end {
-                            return;
-                        }
                         let start_cursor =
                             self.cursor_move_to_offset_internal(cursor_beg, range.start);
                         let end_cursor =
