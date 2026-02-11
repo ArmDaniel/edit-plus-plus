@@ -31,6 +31,7 @@ use std::fs::File;
 use std::io::{self, Read as _, Write as _};
 use std::mem::{self, MaybeUninit};
 use std::ops::Range;
+use std::path::Path;
 use std::rc::Rc;
 use std::str;
 
@@ -45,6 +46,7 @@ use crate::framebuffer::{Framebuffer, IndexedColor};
 use crate::helpers::*;
 use crate::oklab::StraightRgba;
 use crate::simd::memchr2;
+use crate::syntax::{HighlightSpan, SyntaxHighlighter, SyntaxLanguage};
 use crate::unicode::{self, Cursor, MeasurementConfig, Utf8Chars};
 use crate::{icu, simd};
 
@@ -249,6 +251,10 @@ pub struct TextBuffer {
     selection: Option<TextBufferSelection>,
     selection_generation: u32,
     search: Option<UnsafeCell<ActiveSearch>>,
+    syntax_language: Option<SyntaxLanguage>,
+    syntax_highlighter: Option<SyntaxHighlighter>,
+    syntax_spans: Vec<HighlightSpan>,
+    syntax_generation: u32,
 
     width: CoordType,
     margin_width: CoordType,
@@ -297,6 +303,10 @@ impl TextBuffer {
             selection: None,
             selection_generation: 0,
             search: None,
+            syntax_language: None,
+            syntax_highlighter: None,
+            syntax_spans: Vec::new(),
+            syntax_generation: 0,
 
             width: 0,
             margin_width: 0,
@@ -598,6 +608,21 @@ impl TextBuffer {
         self.line_highlight_enabled = enabled;
     }
 
+    /// Sets the syntax language used for highlighting.
+    pub fn set_syntax_language(&mut self, language: Option<SyntaxLanguage>) {
+        if self.syntax_language != language {
+            self.syntax_language = language;
+            self.syntax_highlighter = language.and_then(SyntaxHighlighter::new);
+            self.syntax_spans.clear();
+            self.syntax_generation = self.buffer.generation().wrapping_sub(1);
+        }
+    }
+
+    /// Sets the syntax language based on a file path.
+    pub fn set_syntax_from_path(&mut self, path: &Path) {
+        self.set_syntax_language(SyntaxLanguage::from_path(path));
+    }
+
     /// Sets a ruler column, e.g. 80.
     pub fn set_ruler(&mut self, column: CoordType) {
         self.ruler = column;
@@ -676,6 +701,17 @@ impl TextBuffer {
         self.set_selection(None);
         self.mark_as_clean();
         self.reflow();
+    }
+
+    fn syntax_spans(&mut self) -> Option<&[HighlightSpan]> {
+        let highlighter = self.syntax_highlighter.as_mut()?;
+        if self.syntax_generation != self.buffer.generation() {
+            let mut text = String::new();
+            self.buffer.copy_into(&mut text);
+            self.syntax_spans = highlighter.highlight(&text);
+            self.syntax_generation = self.buffer.generation();
+        }
+        Some(&self.syntax_spans)
     }
 
     /// Copies the contents of the buffer into a string.
@@ -1736,6 +1772,8 @@ impl TextBuffer {
         let text_width = width - self.margin_width;
         let mut visualizer_buf = [0xE2, 0x90, 0x80]; // U+2400 in UTF8
         let mut visual_pos_x_max = 0;
+        let syntax_spans = self.syntax_spans().map(|spans| spans.to_vec());
+        let mut syntax_index = 0usize;
 
         // Pick the cursor closer to the `origin.y`.
         let mut cursor = {
@@ -1978,6 +2016,65 @@ impl TextBuffer {
             }
 
             fb.replace_text(destination.top + y, destination.left, destination.right, &line);
+
+            if let Some(spans) = syntax_spans.as_ref() {
+                let line_start = cursor_beg.offset;
+                let line_end = cursor_end.offset;
+
+                while syntax_index < spans.len()
+                    && spans[syntax_index].range.end <= line_start
+                {
+                    syntax_index += 1;
+                }
+
+                for span in spans[syntax_index..].iter() {
+                    if span.range.start >= line_end {
+                        break;
+                    }
+
+                    let span_start = span.range.start.max(line_start);
+                    let span_end = span.range.end.min(line_end);
+                    if span_start >= span_end {
+                        continue;
+                    }
+
+                    let mut apply_range = |range: Range<usize>| {
+                        if range.start >= range.end {
+                            return;
+                        }
+                        let start_cursor =
+                            self.cursor_move_to_offset_internal(cursor_beg, range.start);
+                        let end_cursor =
+                            self.cursor_move_to_offset_internal(start_cursor, range.end);
+                        let left = start_cursor.visual_pos.x.max(origin.x);
+                        let right = end_cursor.visual_pos.x.min(origin.x + text_width);
+                        if left >= right {
+                            return;
+                        }
+                        let left = destination.left + self.margin_width + left - origin.x;
+                        let right = destination.left + self.margin_width + right - origin.x;
+                        let top = destination.top + y;
+                        fb.blend_fg(
+                            Rect { left, top, right, bottom: top + 1 },
+                            fb.indexed(span.color),
+                        );
+                    };
+
+                    if selection_off.start < selection_off.end
+                        && span_start < selection_off.end
+                        && span_end > selection_off.start
+                    {
+                        if span_start < selection_off.start {
+                            apply_range(span_start..selection_off.start);
+                        }
+                        if span_end > selection_off.end {
+                            apply_range(selection_off.end..span_end);
+                        }
+                    } else {
+                        apply_range(span_start..span_end);
+                    }
+                }
+            }
 
             cursor = cursor_end;
         }
