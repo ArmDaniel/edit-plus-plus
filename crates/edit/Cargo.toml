@@ -20,6 +20,18 @@ debug-latency = []
 
 [dependencies]
 stdext.workspace = true
+tree-sitter = "0.26.5"
+tree-sitter-c = "0.24.1"
+tree-sitter-c-sharp = "0.23.1"
+tree-sitter-cpp = "0.23.4"
+tree-sitter-css = "0.25.0"
+tree-sitter-d = "0.8.2"
+tree-sitter-highlight = "0.26.5"
+tree-sitter-html = "0.23.2"
+tree-sitter-javascript = "0.25.0"
+tree-sitter-ruby = "0.23.1"
+tree-sitter-rust = "0.24.0"
+tree-sitter-typescript = "0.23.2"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

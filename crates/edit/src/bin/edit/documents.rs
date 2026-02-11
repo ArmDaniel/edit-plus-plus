@@ -67,6 +67,10 @@ impl Document {
         self.dir = Some(DisplayablePathBuf::from_path(dir));
         self.path = Some(path);
         self.update_file_mode();
+        if let Some(path) = self.path.as_ref() {
+            let mut tb = self.buffer.borrow_mut();
+            tb.set_syntax_from_path(path);
+        }
     }
 
     fn update_file_mode(&mut self) {
