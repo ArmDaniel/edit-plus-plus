@@ -703,15 +703,17 @@ impl TextBuffer {
         self.reflow();
     }
 
-    fn syntax_spans(&mut self) -> Option<&[HighlightSpan]> {
-        let highlighter = self.syntax_highlighter.as_mut()?;
+    fn refresh_syntax_spans(&mut self) -> bool {
+        let Some(highlighter) = self.syntax_highlighter.as_mut() else {
+            return false;
+        };
         if self.syntax_generation != self.buffer.generation() {
             let mut text = String::new();
             self.buffer.copy_into(&mut text);
             self.syntax_spans = highlighter.highlight(&text);
             self.syntax_generation = self.buffer.generation();
         }
-        Some(&self.syntax_spans)
+        true
     }
 
     /// Copies the contents of the buffer into a string.
@@ -1772,7 +1774,7 @@ impl TextBuffer {
         let text_width = width - self.margin_width;
         let mut visualizer_buf = [0xE2, 0x90, 0x80]; // U+2400 in UTF8
         let mut visual_pos_x_max = 0;
-        let syntax_spans = self.syntax_spans().map(|spans| spans.to_vec());
+        let has_syntax_spans = self.refresh_syntax_spans();
         let mut syntax_index = 0usize;
 
         // Pick the cursor closer to the `origin.y`.
@@ -2017,7 +2019,8 @@ impl TextBuffer {
 
             fb.replace_text(destination.top + y, destination.left, destination.right, &line);
 
-            if let Some(spans) = syntax_spans.as_ref() {
+            if has_syntax_spans {
+                let spans = self.syntax_spans.as_slice();
                 let line_start = cursor_beg.offset;
                 let line_end = cursor_end.offset;
 
